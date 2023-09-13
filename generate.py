@@ -146,8 +146,14 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
 
     ## Load pretrained score network.
     print(f'Loading network from "{network_pkl}"...')
-    data1 = torch.load(ckpt_dir, map_location=torch.device('cpu'))
-    net = data1['ema'].eval().to(device)
+    if network_pkl.endswith(".pkl"):
+        with open(network_pkl, 'rb') as f:
+            net = pickle.load(f)['ema'].to(device)
+    elif network_pkl.endswith(".pt"):
+        data1 = torch.load(network_pkl, map_location=torch.device('cpu'))
+        net = data1['ema'].eval().to(device)
+    #data1 = torch.load(ckpt_dir, map_location=torch.device('cpu'))
+    #net = data1['ema'].eval().to(device)
     #with open(network_pkl, 'rb') as f:
     #    net = pickle.load(f)['ema'].to(device)
 
