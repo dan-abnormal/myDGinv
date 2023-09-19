@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import PIL.Image
 import tensorflow as tf
+import dnnlib
 import io
 from torchvision.utils import make_grid, save_image
 from torch_utils import distributed as dist
@@ -215,7 +216,7 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
     ## Load pretrained score network.
     print(f'Loading network from "{network_pkl}"...')
     if network_pkl.endswith(".pkl"):
-        with open(network_pkl, 'rb') as f:
+        with dnnlib.util.open_url(network_pkl, verbose=(dist.get_rank() == 0)) as f:
             net = pickle.load(f)['ema'].to(device)
     elif network_pkl.endswith(".pt"):
         data1 = torch.load(network_pkl, map_location=torch.device('cpu'))
