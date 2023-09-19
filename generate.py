@@ -9,6 +9,7 @@
 "Elucidating the Design Space of Diffusion-Based Generative Models"."""
 
 import os
+import re
 import click
 import tqdm
 import pickle
