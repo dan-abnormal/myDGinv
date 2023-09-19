@@ -176,7 +176,7 @@ def parse_int_list(s):
 @click.option('--seed',                    help='Seed number',                 metavar='INT',                       type=click.IntRange(min=0), default=0, show_default=True)
 @click.option('--num_samples',             help='Num samples',                 metavar='INT',                       type=click.IntRange(min=1), default=50000, show_default=True)
 @click.option('--save_type',               help='png or npz',                  metavar='png|npz',                   type=click.Choice(['png', 'npz']), default='npz')
-@click.option('--device',                  help='Device', metavar='STR',                                            type=str, default='cuda:0')
+#@click.option('--device',                  help='Device', metavar='STR',                                            type=str, default='cuda:0')
 
 ## DG configuration
 @click.option('--dg_weight_1st_order',     help='Weight of DG for 1st prediction',       metavar='FLOAT',           type=click.FloatRange(min=0), default=2., show_default=True)
@@ -192,7 +192,7 @@ def parse_int_list(s):
 ## Discriminator architecture
 @click.option('--cond',                    help='Is it conditional discriminator?', metavar='INT',                  type=click.IntRange(min=0, max=1), default=0, show_default=True)
 
-def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, max_batch_size, eps_scaler, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device, **sampler_kwargs):
+def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, max_batch_size, eps_scaler, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device=torch.device('cuda'), **sampler_kwargs):
     
     dist.init()
     num_batches = ((len(seeds) - 1) // (max_batch_size * dist.get_world_size()) + 1) * dist.get_world_size()
