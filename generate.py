@@ -152,7 +152,7 @@ def parse_int_list(s):
 @click.option('--outdir',                  help='Where to save the output images', metavar='DIR',                   type=str, required=True)
 @click.option('--seeds',                   help='Random seeds (e.g. 1,2,5-10)', metavar='LIST',                     type=parse_int_list, default='0-63', show_default=True)
 @click.option('--class', 'class_idx',      help='Class label  [default: random]', metavar='INT',                    type=click.IntRange(min=0), default=None)
-@click.option('--batch', 'batch_size',     help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=100, show_default=True)
+@click.option('--batch', 'max_batch_size',     help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=100, show_default=True)
 @click.option('--eps_scaler', 'eps_scaler',help='epsilon scaler',         metavar='FLOAT',                          type=float, default=1.0, show_default=True)
 
 @click.option('--steps', 'num_steps',      help='Number of sampling steps', metavar='INT',                          type=click.IntRange(min=1), default=18, show_default=True)
