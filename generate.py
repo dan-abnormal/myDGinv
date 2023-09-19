@@ -27,7 +27,7 @@ def edm_sampler(
     boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator,
     net, latents, class_labels=None, randn_like=torch.randn_like,
     num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
-    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1, eps_scaler=1.0
 ):
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
@@ -69,6 +69,13 @@ def edm_sampler(
 
         # Euler step.
         denoised = net(x_hat, t_hat, class_labels).to(torch.float64)
+
+        # epsilon scaling
+        pred_eps = (x_hat - denoised) / t_hat[:, None, None, None]
+        print(f'using scaler: "{eps_scaler}" at Euler step')
+        pred_eps = pred_eps / eps_scaler
+        denoised = x_hat - pred_eps * t_hat[:, None, None, None]
+
         d_cur = (x_hat - denoised) / t_hat[:, None, None, None]
         ## DG correction
         if dg_weight_1st_order != 0.:
@@ -82,6 +89,13 @@ def edm_sampler(
         # Apply 2nd order correction.
         if i < num_steps - 1:
             denoised = net(x_next, t_next, class_labels).to(torch.float64)
+
+            # epsilon scaling
+            pred_eps = (x_next - denoised) / t_next
+            #print(f'using scaler: "{eps_scaler}" at correction step')
+            pred_eps = pred_eps / eps_scaler
+            denoised = x_next - pred_eps * t_next
+
             d_prime = (x_next - denoised) / t_next
             ## DG correction
             if dg_weight_2nd_order != 0.:
@@ -98,6 +112,7 @@ def edm_sampler(
 @click.option('--outdir',                  help='Where to save the output images', metavar='DIR',                   type=str, required=True)
 @click.option('--class', 'class_idx',      help='Class label  [default: random]', metavar='INT',                    type=click.IntRange(min=0), default=None)
 @click.option('--batch', 'batch_size',     help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=100, show_default=True)
+@click.option('--eps_scaler', 'eps_scaler',help='epsilon scaler',         metavar='FLOAT',                          type=float, default=1.0, show_default=True)
 
 @click.option('--steps', 'num_steps',      help='Number of sampling steps', metavar='INT',                          type=click.IntRange(min=1), default=18, show_default=True)
 @click.option('--sigma_min',               help='Lowest noise level  [default: varies]', metavar='FLOAT',           type=click.FloatRange(min=0, min_open=True))
@@ -135,7 +150,7 @@ def edm_sampler(
 ## Discriminator architecture
 @click.option('--cond',                    help='Is it conditional discriminator?', metavar='INT',                  type=click.IntRange(min=0, max=1), default=0, show_default=True)
 
-def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, batch_size, do_seed, seed, num_samples, network_pkl, outdir, class_idx, device, **sampler_kwargs):
+def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, batch_size, eps_scaler, do_seed, seed, num_samples, network_pkl, outdir, class_idx, device, **sampler_kwargs):
     ## Set seed
     if do_seed:
         import random
@@ -181,7 +196,7 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
 
         ## Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
-        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=torch.randn_like, **sampler_kwargs)
+        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=torch.randn_like, eps_scaler=eps_scaler, **sampler_kwargs)
 
         ## Save images.
         images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
