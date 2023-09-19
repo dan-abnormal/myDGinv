@@ -72,7 +72,7 @@ def edm_sampler(
 
         # epsilon scaling
         pred_eps = (x_hat - denoised) / t_hat[:, None, None, None]
-        print(f'using scaler: "{eps_scaler}" at Euler step')
+        #print(f'using scaler: "{eps_scaler}" at Euler step')
         pred_eps = pred_eps / eps_scaler
         denoised = x_hat - pred_eps * t_hat[:, None, None, None]
 
