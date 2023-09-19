@@ -191,7 +191,7 @@ def parse_int_list(s):
 ## Discriminator architecture
 @click.option('--cond',                    help='Is it conditional discriminator?', metavar='INT',                  type=click.IntRange(min=0, max=1), default=0, show_default=True)
 
-def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, batch_size, eps_scaler, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device, **sampler_kwargs):
+def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, max_batch_size, eps_scaler, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device, **sampler_kwargs):
     
     dist.init()
     num_batches = ((len(seeds) - 1) // (max_batch_size * dist.get_world_size()) + 1) * dist.get_world_size()
