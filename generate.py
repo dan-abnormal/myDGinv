@@ -18,6 +18,7 @@ import PIL.Image
 import tensorflow as tf
 import io
 from torchvision.utils import make_grid, save_image
+from torch_utils import distributed as dist
 import classifier_lib
 
 #----------------------------------------------------------------------------
@@ -107,9 +108,48 @@ def edm_sampler(
 
 #----------------------------------------------------------------------------
 
+#----------------------------------------------------------------------------
+# Wrapper for torch.Generator that allows specifying a different random seed
+# for each sample in a minibatch.
+
+class StackedRandomGenerator:
+    def __init__(self, device, seeds):
+        super().__init__()
+        self.generators = [torch.Generator(device).manual_seed(int(seed) % (1 << 32)) for seed in seeds]
+
+    def randn(self, size, **kwargs):
+        assert size[0] == len(self.generators)
+        return torch.stack([torch.randn(size[1:], generator=gen, **kwargs) for gen in self.generators])
+
+    def randn_like(self, input):
+        return self.randn(input.shape, dtype=input.dtype, layout=input.layout, device=input.device)
+
+    def randint(self, *args, size, **kwargs):
+        assert size[0] == len(self.generators)
+        return torch.stack([torch.randint(*args, size=size[1:], generator=gen, **kwargs) for gen in self.generators])
+
+#----------------------------------------------------------------------------
+# Parse a comma separated list of numbers or ranges and return a list of ints.
+# Example: '1,2,5-10' returns [1, 2, 5, 6, 7, 8, 9, 10]
+
+def parse_int_list(s):
+    if isinstance(s, list): return s
+    ranges = []
+    range_re = re.compile(r'^(\d+)-(\d+)$')
+    for p in s.split(','):
+        m = range_re.match(p)
+        if m:
+            ranges.extend(range(int(m.group(1)), int(m.group(2))+1))
+        else:
+            ranges.append(int(p))
+    return ranges
+
+#----------------------------------------------------------------------------
+
 @click.command()
 @click.option('--network', 'network_pkl',  help='Network pickle filename', metavar='PATH|URL',                      type=str, required=True)
 @click.option('--outdir',                  help='Where to save the output images', metavar='DIR',                   type=str, required=True)
+@click.option('--seeds',                   help='Random seeds (e.g. 1,2,5-10)', metavar='LIST',                     type=parse_int_list, default='0-63', show_default=True)
 @click.option('--class', 'class_idx',      help='Class label  [default: random]', metavar='INT',                    type=click.IntRange(min=0), default=None)
 @click.option('--batch', 'batch_size',     help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=100, show_default=True)
 @click.option('--eps_scaler', 'eps_scaler',help='epsilon scaler',         metavar='FLOAT',                          type=float, default=1.0, show_default=True)
@@ -130,8 +170,8 @@ def edm_sampler(
 
 #---------------------------------------------------------------------------- Options for Discriminator-Guidance
 ## Sampling configureation
-@click.option('--do_seed',                 help='Applying manual seed or not', metavar='INT',                       type=click.IntRange(min=0), default=0, show_default=True)
-@click.option('--seed',                    help='Seed number',                 metavar='INT',                       type=click.IntRange(min=0), default=0, show_default=True)
+#@click.option('--do_seed',                 help='Applying manual seed or not', metavar='INT',                       type=click.IntRange(min=0), default=0, show_default=True)
+#@click.option('--seed',                    help='Seed number',                 metavar='INT',                       type=click.IntRange(min=0), default=0, show_default=True)
 @click.option('--num_samples',             help='Num samples',                 metavar='INT',                       type=click.IntRange(min=1), default=50000, show_default=True)
 @click.option('--save_type',               help='png or npz',                  metavar='png|npz',                   type=click.Choice(['png', 'npz']), default='npz')
 @click.option('--device',                  help='Device', metavar='STR',                                            type=str, default='cuda:0')
@@ -151,6 +191,17 @@ def edm_sampler(
 @click.option('--cond',                    help='Is it conditional discriminator?', metavar='INT',                  type=click.IntRange(min=0, max=1), default=0, show_default=True)
 
 def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, batch_size, eps_scaler, do_seed, seed, num_samples, network_pkl, outdir, class_idx, device, **sampler_kwargs):
+    
+    dist.init()
+    num_batches = ((len(seeds) - 1) // (max_batch_size * dist.get_world_size()) + 1) * dist.get_world_size()
+    all_batches = torch.as_tensor(seeds).tensor_split(num_batches)
+    rank_batches = all_batches[dist.get_rank() :: dist.get_world_size()]
+
+    # Rank 0 goes first.
+    if dist.get_rank() != 0:
+        torch.distributed.barrier()
+    
+    '''
     ## Set seed
     if do_seed:
         import random
@@ -158,6 +209,7 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+    '''
 
     ## Load pretrained score network.
     print(f'Loading network from "{network_pkl}"...')
@@ -180,13 +232,24 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
     print(discriminator)
     vpsde = classifier_lib.vpsde()
 
+    # Other ranks follow.
+    if dist.get_rank() == 0:
+        torch.distributed.barrier()
+
     ## Loop over batches.
-    num_batches = num_samples // batch_size + 1
-    print(f'Generating {num_samples} images to "{outdir}"...')
+    #num_batches = (num_samples // (batch_size * dist.get_world_size()) + 1) * dist.get_world_size()
+    #print(f'Generating {num_samples} images to "{outdir}"...')
+    dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
     os.makedirs(outdir, exist_ok=True)
-    for i in tqdm.tqdm(range(num_batches)):
+    for batch_seeds in tqdm.tqdm(rank_batches, unit='batch', disable=(dist.get_rank() != 0)):
+        torch.distributed.barrier()
+        batch_size = len(batch_seeds)
+        if batch_size == 0:
+            continue
+
         ## Pick latents and labels.
-        latents = torch.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
+        rnd = StackedRandomGenerator(device, batch_seeds)
+        latents = rnd.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
         class_labels = None
         if net.label_dim:
             class_labels = torch.eye(net.label_dim, device=device)[torch.randint(net.label_dim, size=[batch_size], device=device)]
@@ -196,7 +259,7 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
 
         ## Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
-        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=torch.randn_like, eps_scaler=eps_scaler, **sampler_kwargs)
+        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=rnd.randn_like, eps_scaler=eps_scaler, **sampler_kwargs)
 
         ## Save images.
         images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
@@ -221,6 +284,10 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
             image_grid = make_grid(torch.tensor(images_np).permute(0, 3, 1, 2) / 255., nrow, padding=2)
             with tf.io.gfile.GFile(os.path.join(outdir, f"sample_{r}.png"), "wb") as fout:
                 save_image(image_grid, fout)
+    
+    # Done.
+    torch.distributed.barrier()
+    dist.print0('Done.')
 
 
 
