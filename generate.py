@@ -75,7 +75,7 @@ def edm_sampler(
         denoised = net(x_hat, t_hat, class_labels).to(torch.float64)
 
         # epsilon scaling
-        eps_scaler = eps_scaler + kappa*i #NEW
+        eps_scaler = eps_scaler + kappa #NEW
         print(f'eps_scaler={eps_scaler}') #NEW
         pred_eps = (x_hat - denoised) / t_hat[:, None, None, None]
         #print(f'using scaler: "{eps_scaler}" at Euler step')
