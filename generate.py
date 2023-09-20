@@ -30,7 +30,7 @@ def edm_sampler(
     boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator,
     net, latents, class_labels=None, randn_like=torch.randn_like,
     num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
-    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1, eps_scaler=1.0
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1, eps_scaler=1.0, kappa=0.0
 ):
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
@@ -54,6 +54,7 @@ def edm_sampler(
     # Main sampling loop.
     x_next = latents.to(torch.float64) * t_steps[0]
     for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+        print(f't_cur={t_cur}') #NEW
         x_cur = x_next
         S_churn_vec_ = S_churn_vec.clone()
         S_noise_vec_ = S_noise_vec.clone()
@@ -74,6 +75,8 @@ def edm_sampler(
         denoised = net(x_hat, t_hat, class_labels).to(torch.float64)
 
         # epsilon scaling
+        eps_scaler = eps_scaler + kappa*t_cur #NEW
+        print(f'eps_scaler={eps_scaler}') #NEW
         pred_eps = (x_hat - denoised) / t_hat[:, None, None, None]
         #print(f'using scaler: "{eps_scaler}" at Euler step')
         pred_eps = pred_eps / eps_scaler
@@ -155,6 +158,7 @@ def parse_int_list(s):
 @click.option('--class', 'class_idx',      help='Class label  [default: random]', metavar='INT',                    type=click.IntRange(min=0), default=None)
 @click.option('--batch', 'max_batch_size',     help='Maximum batch size', metavar='INT',                                type=click.IntRange(min=1), default=100, show_default=True)
 @click.option('--eps_scaler', 'eps_scaler',help='epsilon scaler',         metavar='FLOAT',                          type=float, default=1.0, show_default=True)
+@click.option('--kappa', 'kappa',help='kappa',         metavar='FLOAT',                          type=float, default=0, show_default=True)
 
 @click.option('--steps', 'num_steps',      help='Number of sampling steps', metavar='INT',                          type=click.IntRange(min=1), default=18, show_default=True)
 @click.option('--sigma_min',               help='Lowest noise level  [default: varies]', metavar='FLOAT',           type=click.FloatRange(min=0, min_open=True))
@@ -192,7 +196,7 @@ def parse_int_list(s):
 ## Discriminator architecture
 @click.option('--cond',                    help='Is it conditional discriminator?', metavar='INT',                  type=click.IntRange(min=0, max=1), default=0, show_default=True)
 
-def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, max_batch_size, eps_scaler, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device=torch.device('cuda'), **sampler_kwargs):
+def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order, cond, pretrained_classifier_ckpt, discriminator_ckpt, save_type, max_batch_size, eps_scaler, kappa, do_seed, seed, num_samples, seeds, network_pkl, outdir, class_idx, device=torch.device('cuda'), **sampler_kwargs):
     
     dist.init()
     num_batches = ((len(seeds) - 1) // (max_batch_size * dist.get_world_size()) + 1) * dist.get_world_size()
@@ -261,7 +265,7 @@ def main(boosting, time_min, time_max, dg_weight_1st_order, dg_weight_2nd_order,
 
         ## Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
-        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=rnd.randn_like, eps_scaler=eps_scaler, **sampler_kwargs)
+        images = edm_sampler(boosting, time_min, time_max, vpsde, dg_weight_1st_order, dg_weight_2nd_order, discriminator, net, latents, class_labels, randn_like=rnd.randn_like, eps_scaler=eps_scaler, kappa=kappa, **sampler_kwargs)
 
         ## Save images.
         images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
