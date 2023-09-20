@@ -54,7 +54,7 @@ def edm_sampler(
     # Main sampling loop.
     x_next = latents.to(torch.float64) * t_steps[0]
     for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
-        print(f'i={i}') #NEW
+        #print(f'i={i}') #NEW
         x_cur = x_next
         S_churn_vec_ = S_churn_vec.clone()
         S_noise_vec_ = S_noise_vec.clone()
@@ -76,7 +76,7 @@ def edm_sampler(
 
         # epsilon scaling
         eps_scaler_n = eps_scaler + kappa*i #NEW
-        print(f'eps_scaler={eps_scaler_n}') #NEW
+        #print(f'eps_scaler={eps_scaler_n}') #NEW
         pred_eps = (x_hat - denoised) / t_hat[:, None, None, None]
         #print(f'using scaler: "{eps_scaler_n}" at Euler step')
         pred_eps = pred_eps / eps_scaler_n
