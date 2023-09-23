@@ -88,14 +88,14 @@ def main(**kwargs):
 
     ## Prepare fake data
     if not opts.cond:
-        if not os.path.exists(os.path.join(gendir, 'gen_data_for_discriminator_training.npz')):
+        if not os.path.exists(os.path.join(savedir, 'gen_data_for_discriminator_training.npz')):
             filenames = np.sort(glob.glob(os.path.join(gendir, 'sample*.npz')))
             gen_data = npz_concat(filenames)
             np.savez_compressed(os.path.join(savedir, 'gen_data_for_discriminator_training.npz'), samples=gen_data)
         else:
             gen_data = np.load(os.path.join(savedir, 'gen_data_for_discriminator_training.npz'))['samples']
     else:
-        if not os.path.exists(os.path.join(gendir, 'gen_data_for_discriminator_training.npz')):
+        if not os.path.exists(os.path.join(savedir, 'gen_data_for_discriminator_training.npz')):
             filenames = np.sort(glob.glob(os.path.join(gendir, 'sample*.npz')))
             gen_data, gen_label = npz_concat_cond(filenames)
             np.savez_compressed(os.path.join(savedir, 'gen_data_for_discriminator_training.npz'), samples=gen_data, label=gen_label)
