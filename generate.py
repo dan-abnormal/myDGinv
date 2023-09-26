@@ -73,7 +73,7 @@ def edm_sampler(
 
         # Euler step.
         denoised = net(x_hat, t_hat, class_labels).to(torch.float64)
-
+        '''
         # epsilon scaling
         eps_scaler_n = eps_scaler + kappa*i #NEW
         #print(f'eps_scaler={eps_scaler_n}') #NEW
@@ -81,7 +81,7 @@ def edm_sampler(
         #print(f'using scaler: "{eps_scaler_n}" at Euler step')
         pred_eps = pred_eps / eps_scaler_n
         denoised = x_hat - pred_eps * t_hat[:, None, None, None]
-
+        '''
         d_cur = (x_hat - denoised) / t_hat[:, None, None, None]
         ## DG correction
         if dg_weight_1st_order != 0.:
@@ -90,23 +90,28 @@ def edm_sampler(
                 if i % period_weight == 0:
                     discriminator_guidance[log_ratio < 0.] *= 2.
             d_cur += dg_weight_1st_order * (discriminator_guidance / t_hat[:, None, None, None])
+        eps_scaler_n = eps_scaler + kappa*i #NEW
+        d_cur = d_cur / eps_scaler_n
         x_next = x_hat + (t_next - t_hat)[:, None, None, None] * d_cur
 
         # Apply 2nd order correction.
         if i < num_steps - 1:
             denoised = net(x_next, t_next, class_labels).to(torch.float64)
 
+            '''
             # epsilon scaling
             pred_eps = (x_next - denoised) / t_next
             #print(f'using scaler: "{eps_scaler_n}" at correction step')
             pred_eps = pred_eps / eps_scaler_n
             denoised = x_next - pred_eps * t_next
+            '''
 
             d_prime = (x_next - denoised) / t_next
             ## DG correction
             if dg_weight_2nd_order != 0.:
                 discriminator_guidance = classifier_lib.get_grad_log_ratio(discriminator, vpsde, x_next, t_next, net.img_resolution, time_min, time_max, class_labels, log=False)
                 d_prime += dg_weight_2nd_order * (discriminator_guidance / t_next)
+            d_prime = d_prime / eps_scaler_n
             x_next = x_hat + (t_next - t_hat)[:, None, None, None] * (0.5 * d_cur + 0.5 * d_prime)
 
     return x_next
